@@ -1,0 +1,146 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>کیف پول جهانی</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 0; background: #f0f4f8; }
+    .container { max-width: 400px; margin: 40px auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 0 15px rgba(0,0,0,0.1); }
+    input, button { width: 100%; padding: 10px; margin: 5px 0; border-radius: 8px; border: 1px solid #ccc; }
+    button { background: #1e90ff; color: white; cursor: pointer; font-weight: bold; }
+    .hidden { display: none; }
+    .card { background: #efefef; padding: 10px; border-radius: 8px; margin: 10px 0; }
+    h2 { text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>🌍 کیف پول جهانی</h2><div id="login-section">
+  <input type="text" id="username" placeholder="نام کاربری" />
+  <input type="password" id="password" placeholder="رمز عبور" />
+  <button onclick="login()">ورود / ثبت‌نام</button>
+</div>
+
+<div id="wallet-section" class="hidden">
+  <p><strong>کارت شما:</strong> <span id="cardNumber"></span></p>
+  <p><strong>موجودی ($):</strong> <span id="balance"></span></p>
+
+  <input type="text" id="toUser" placeholder="نام کاربری گیرنده" />
+  <input type="number" id="amount" placeholder="مبلغ دلاری" />
+  <button onclick="transfer()">💸 انتقال پول</button>
+
+  <input type="text" id="licenseCode" placeholder="کد لایسنس" />
+  <button onclick="redeemLicense()">🎁 فعال‌سازی لایسنس</button>
+
+  <button onclick="showLeaderboard()">📊 جدول امتیازات</button>
+  <button onclick="showAdminPanel()">🛠️ پنل مدیریت</button>
+</div>
+
+<div id="leaderboard-section" class="hidden">
+  <h3>🏆 جدول امتیازات</h3>
+  <div id="leaderboard"></div>
+</div>
+
+<div id="admin-section" class="hidden">
+  <input type="password" id="adminPass" placeholder="رمز مدیریت" />
+  <button onclick="checkAdmin()">ورود مدیر</button>
+
+  <div id="adminPanel" class="hidden">
+    <input type="text" id="newLicense" placeholder="کد لایسنس جدید" />
+    <input type="number" id="licenseAmount" placeholder="مقدار دلار" />
+    <button onclick="createLicense()">➕ ساخت لایسنس</button>
+  </div>
+</div>
+
+  </div>  <script>
+    const SUPABASE_URL = 'https://udjcoynnzzplhzfjhkcf.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkamNveW5uenpwbGh6Zmpoa2NmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA4NTYyNjUsImV4cCI6MjA2NjQzMjI2NX0.xDTW6mncIIQ6yW6IHbAKVafNXcxf5e9ZXLa-qlvqxuQ';
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let currentUser = null;
+
+    async function login() {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value.trim();
+      if (!username || !password) return alert('لطفا اطلاعات را کامل وارد کنید');
+
+      let { data: users } = await supabase.from('users').select('*').eq('username', username);
+      if (users.length === 0) {
+        const card = '**** **** **** ' + Math.floor(1000 + Math.random() * 9000);
+        await supabase.from('users').insert([{ username, password, balance: 0, card_number: card }]);
+        users = [{ username, password, balance: 0, card_number: card }];
+      } else if (users[0].password !== password) {
+        return alert('رمز اشتباه است');
+      }
+
+      currentUser = users[0];
+      document.getElementById('login-section').classList.add('hidden');
+      document.getElementById('wallet-section').classList.remove('hidden');
+      updateWalletUI();
+    }
+
+    function updateWalletUI() {
+      document.getElementById('cardNumber').innerText = currentUser.card_number;
+      document.getElementById('balance').innerText = currentUser.balance.toFixed(2);
+    }
+
+    async function transfer() {
+      const toUser = document.getElementById('toUser').value.trim();
+      const amount = parseFloat(document.getElementById('amount').value);
+      if (!toUser || isNaN(amount) || amount <= 0) return alert('اطلاعات انتقال نادرست است');
+
+      const { data: recipient } = await supabase.from('users').select('*').eq('username', toUser);
+      if (recipient.length === 0) return alert('کاربر مقصد پیدا نشد');
+      if (currentUser.balance < amount) return alert('موجودی کافی نیست');
+
+      await supabase.from('users').update({ balance: currentUser.balance - amount }).eq('username', currentUser.username);
+      await supabase.from('users').update({ balance: recipient[0].balance + amount }).eq('username', toUser);
+
+      currentUser.balance -= amount;
+      updateWalletUI();
+      alert('انتقال موفق');
+    }
+
+    async function redeemLicense() {
+      const code = document.getElementById('licenseCode').value.trim();
+      const { data: license } = await supabase.from('licenses').select('*').eq('code', code);
+      if (license.length === 0) return alert('کد نامعتبر است');
+      if (license[0].used_by) return alert('این کد قبلاً استفاده شده');
+
+      await supabase.from('licenses').update({ used_by: currentUser.id }).eq('code', code);
+      await supabase.from('users').update({ balance: currentUser.balance + license[0].value }).eq('username', currentUser.username);
+      currentUser.balance += license[0].value;
+      updateWalletUI();
+      alert('شارژ شد!');
+    }
+
+    async function showLeaderboard() {
+      const { data: users } = await supabase.from('users').select('*').order('balance', { ascending: false });
+      const board = users.map(u => `<div class="card">${u.username} - $${u.balance.toFixed(2)}</div>`).join('');
+      document.getElementById('leaderboard').innerHTML = board;
+      document.getElementById('leaderboard-section').classList.remove('hidden');
+    }
+
+    function showAdminPanel() {
+      document.getElementById('admin-section').classList.remove('hidden');
+    }
+
+    function checkAdmin() {
+      const pass = document.getElementById('adminPass').value;
+      if (pass === 'Alireza65901') {
+        document.getElementById('adminPanel').classList.remove('hidden');
+      } else {
+        alert('رمز مدیر اشتباه است');
+      }
+    }
+
+    async function createLicense() {
+      const code = document.getElementById('newLicense').value.trim();
+      const value = parseFloat(document.getElementById('licenseAmount').value);
+      if (!code || isNaN(value)) return alert('اطلاعات نامعتبر است');
+      await supabase.from('licenses').insert([{ code, value }]);
+      alert('لایسنس ساخته شد');
+    }
+  </script></body>
+  </html>
